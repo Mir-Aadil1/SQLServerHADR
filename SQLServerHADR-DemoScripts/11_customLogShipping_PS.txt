@@ -1,0 +1,21 @@
+##Variable for time duration
+$1HourOld = [DateTime]::Now.AddHours(-1)
+
+##Retrieve folders and files in the specified directory
+foreach ($databaseName in (Get-ChildItem C:\Demos\LSBackup\databases | Where { $_.PsIsContainer }) )
+{
+	foreach ($logName in (Get-ChildItem C:\Demos\LSBackup\databases\$databasename | where {($_.CreationTime -ge $1HourOld) -and ($_.Extension -eq ".trn")} | SELECT name))
+	{	
+	
+	$logBackupPath = [System.String]::Concat("'C:\Demos\LSBackup\databases\",$databasename,"\",$logName.Name,"'")
+	$restoreSQL = "RESTORE LOG $databaseName FROM DISK=$logBackupPath WITH NORECOVERY" | Out-File C:\Demos\LSBackup\scripts\$databaseName.sql
+
+	##Build the TSQL command
+	$sqlCommand = [System.String]::Concat("sqlcmd.exe -Slocalhost -E -iC:\Demos\LSBackup\scripts\",$databasename,".sql -oC:\Demos\LSBackup\scripts\LOGs\",$databasename,"_output.log")
+
+
+
+	##Run the TSQL script via sqlcmd.exe
+	Invoke-Expression $sqlCommand
+	} 
+}

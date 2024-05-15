@@ -1,0 +1,142 @@
+--DEMO: Multi-base Differential Backups
+
+--MSDN resource: http://bit.ly/13DhksY
+USE [master];
+GO
+
+-- 1) Create the database to use
+
+CREATE DATABASE [Test4Backup] ON PRIMARY
+( NAME = N'Test4Backup_Primary_File1', FILENAME = N'C:\Demos\Test4Backup_Primary_File1.mdf' ),
+FILEGROUP [SECONDARY]
+( NAME = N'Test4Backup_Secondary_File1', FILENAME = N'C:\Demos\Test4Backup_Secondary_File1.ndf' ),
+( NAME = N'Test4Backup_Secondary_File2', FILENAME = N'C:\Demos\Test4Backup_Secondary_File2.ndf' )
+LOG ON
+( NAME = N'Test4Backup_log', FILENAME = N'C:\Demos\Test4Backup_log.ldf' )
+GO
+
+--Check database properties
+sp_helpdb [Test4Backup]
+
+--2) Take a full database backup
+BACKUP DATABASE [Test4Backup] TO
+	DISK = N'C:\Demos\0_Test4Backup.bak'
+	WITH INIT, STATS;
+GO
+
+
+--3) Take a differential backup
+BACKUP DATABASE [Test4Backup] TO
+	DISK = N'C:\Demos\1_Test4Backup_DIFF.bak'
+	WITH DIFFERENTIAL, INIT, STATS;
+GO
+
+--4) Take a filegroup backup of the secondary filegroup
+
+BACKUP DATABASE [Test4Backup] 
+   FILEGROUP = 'SECONDARY'
+   TO DISK = N'C:\Demos\2_Test4Backup_FG2.bak'
+    WITH INIT, STATS;
+GO
+
+--5) Take a file backup of the file in the primary filegroup. This is also the same as taking a backup of the PRIMARY filegroup since it only has one file
+BACKUP DATABASE [Test4Backup] 
+   FILE = 'Test4Backup_Primary_File1'
+   TO DISK = N'C:\Demos\3_Test4Backup_FGPRI_F1.bak'
+    WITH INIT, STATS;
+GO
+
+
+--6) Take a file backup of the second file in the secondary filegroup.
+BACKUP DATABASE [Test4Backup] 
+   FILE = 'Test4Backup_Secondary_File2'
+   TO DISK = N'C:\Demos\4_Test4Backup_FG2_F2.bak'
+    WITH INIT, STATS;
+GO
+
+--7) Take a differential backup
+BACKUP DATABASE [Test4Backup] TO
+	DISK = N'C:\Demos\5_Test4Backup_DIFF_2.bak'
+	WITH DIFFERENTIAL, INIT, STATS;
+GO
+
+--8) To check the sequence of the restore operations, read the LSNs
+--For the Full database backup in step #2
+RESTORE HEADERONLY FROM DISK = N'C:\Demos\0_Test4Backup.bak'
+RESTORE FILELISTONLY FROM DISK = N'C:\Demos\0_Test4Backup.bak'
+
+--For the Differential database backup in step #3
+RESTORE HEADERONLY FROM DISK = N'C:\Demos\1_Test4Backup_DIFF.bak'
+RESTORE FILELISTONLY FROM DISK = N'C:\Demos\1_Test4Backup_DIFF.bak'
+
+--For the filegroup backup in step #4
+RESTORE HEADERONLY FROM DISK = N'C:\Demos\2_Test4Backup_FG2.bak'
+RESTORE FILELISTONLY FROM DISK = N'C:\Demos\2_Test4Backup_FG2.bak'
+
+--For the file backup in step #5
+RESTORE HEADERONLY FROM DISK = N'C:\Demos\3_Test4Backup_FGPRI_F1.bak'
+RESTORE FILELISTONLY FROM DISK = N'C:\Demos\3_Test4Backup_FGPRI_F1.bak'
+
+--For the file backup in step #6
+RESTORE HEADERONLY FROM DISK = N'C:\Demos\4_Test4Backup_FG2_F2.bak'
+RESTORE FILELISTONLY FROM DISK = N'C:\Demos\4_Test4Backup_FG2_F2.bak'
+
+--For the Differential database backup in step #7
+RESTORE HEADERONLY FROM DISK = N'C:\Demos\5_Test4Backup_DIFF_2.bak'
+RESTORE FILELISTONLY FROM DISK = N'C:\Demos\5_Test4Backup_DIFF_2.bak'
+
+--Let's restore the database from the FULL 
+--and LATEST DIFFERENTIAL
+DROP DATABASE [Test4Backup]
+-- Restore FULL database backup
+RESTORE DATABASE [Test4Backup] FROM
+	DISK = N'C:\Demos\0_Test4Backup.bak'
+	WITH NORECOVERY, STATS;
+GO
+RESTORE DATABASE [Test4Backup] 
+   FROM DISK = N'C:\Demos\5_Test4Backup_DIFF_2.bak'
+	WITH NORECOVERY, STATS;
+GO
+--
+
+--To find out the efficient restore sequence,
+--start with the FULL backup and check the FirstLSN of the restored backup 
+--and the DifferentialBaseLSN of the backups yet to be restored
+--Drop dabase prior to restoring
+DROP DATABASE [Test4Backup]
+--9) Restore FULL database backup
+RESTORE DATABASE [Test4Backup] FROM
+	DISK = N'C:\Demos\0_Test4Backup.bak'
+	WITH NORECOVERY, STATS;
+GO
+--10) Restore filegroup backup from step #4, skipping the differential backup in step #3
+RESTORE DATABASE [Test4Backup] 
+   FILEGROUP = 'SECONDARY'
+   FROM DISK = N'C:\Demos\2_Test4Backup_FG2.bak'
+	WITH NORECOVERY, STATS;
+GO
+
+--11) Restore file backup of the primary filegroup from step #5
+RESTORE DATABASE [Test4Backup] 
+   FILE = 'Test4Backup_Primary_File1'
+   FROM DISK = N'C:\Demos\3_Test4Backup_FGPRI_F1.bak'
+	WITH NORECOVERY, STATS;
+GO
+
+--12) Restore file backup of the second file in the secondary filegroup from step #6
+RESTORE DATABASE [Test4Backup] 
+FILE = 'Test4Backup_Secondary_File2'
+   FROM DISK = N'C:\Demos\4_Test4Backup_FG2_F2.bak'
+	WITH NORECOVERY, STATS;
+GO
+
+--13) Restore differential backup from step #7
+RESTORE DATABASE [Test4Backup] 
+   FROM DISK = N'C:\Demos\5_Test4Backup_DIFF_2.bak'
+	WITH NORECOVERY, STATS;
+GO
+
+--14) Recover the database
+RESTORE DATABASE [Test4Backup] 
+WITH RECOVERY;
+GO

@@ -1,0 +1,206 @@
+USE [master];
+GO
+--1) Create database to use
+IF DATABASEPROPERTYEX (N'testDB', N'Version') > 0
+BEGIN
+	ALTER DATABASE [testDB] SET SINGLE_USER
+		WITH ROLLBACK IMMEDIATE;
+	DROP DATABASE [testDB];
+END
+GO
+
+CREATE DATABASE [testDB] ON PRIMARY (
+    NAME = N'testDB_data',
+    FILENAME = N'C:\Demos\testDB_data.mdf')
+LOG ON (
+    NAME = N'testDB_log',
+    FILENAME = N'C:\Demos\testDB_log.ldf',
+    SIZE = 5MB,
+    FILEGROWTH = 1MB);
+GO
+
+USE [testDB];
+GO
+SET NOCOUNT ON;
+GO
+
+-- 2) Set the database is in SIMPLE recovery model & disable automatic statistics to minimize other log record entries for simplicity 
+ALTER DATABASE [testDB] SET RECOVERY SIMPLE;
+GO
+ALTER DATABASE [testDB] SET AUTO_CREATE_STATISTICS OFF;
+GO
+
+--====================================================
+--DEMO #1: Analyzing the transaction log
+-- 3) Look at the contents of the transaction log
+--    Graphic explaining this better
+--    
+
+DBCC LOGINFO;
+GO
+
+-- 4) Create a table that will generate large amount of transaction log records
+CREATE TABLE [testTable] (
+	[c1] INT IDENTITY,
+	[c2] CHAR (8000) DEFAULT 'This is a record');
+GO
+
+-- 5) Insert rows to fill all of the VLFs
+INSERT INTO [testTable] DEFAULT VALUES;
+GO 400
+
+-- 6) Look at the contents of the transaction log after filling the first two VLFs
+DBCC LOGINFO;
+GO
+--================================================
+-- 7) Start an explicit transaction on a different session
+-- Keep it open to hold a VLF active
+BEGIN TRAN
+INSERT INTO [testTable] DEFAULT VALUES;
+GO
+--================================================
+-- 8) Try to force checkpoint to clear the first VLFs 
+--    Depending on the background task, the first 
+--    VLFs may have already been cleared out by the
+--    earlier CHECKPOINT process so this may just clear
+--    out the earlier VLF  
+CHECKPOINT;
+GO
+
+-- 9) Look at the contents of the transaction log after the checkpoint
+DBCC LOGINFO;
+GO
+
+-- 10) Add more rows to fill up the fourth VLF
+-- See how the circular nature of the log works
+INSERT INTO [testTable] DEFAULT VALUES;
+GO 400 
+
+
+--====================================================
+--DEMO #2: Circular nature the log
+-- 11) Look at the contents of the transaction log after circling back to the first VLF
+DBCC LOGINFO;
+GO
+
+-- 12) Add some more rows but keep the transaction open. This will cause the log to grow 
+--     because the third VLF is being held by the active transaction.
+
+INSERT INTO [testTable] DEFAULT VALUES;
+GO 300 
+
+-- 13) Look at the contents of the transaction log after growing. Note the VLF sequence numbers
+DBCC LOGINFO;
+GO
+
+-- 14) Run checkpoint to see if it truncates the log
+CHECKPOINT;
+GO
+
+DBCC LOGINFO;
+GO
+
+-- 15) Check the amount of log used
+DBCC SQLPERF (LOGSPACE);
+GO
+
+--====================================================
+--DEMO #3: Clearing/truncating the transaction log
+
+--================================================
+-- 16) Release the active transaction on the other session
+COMMIT TRAN;
+GO
+--================================================
+
+
+-- 17) Look at the contents of the transaction log after the transaction has been released
+DBCC LOGINFO;
+GO
+
+-- 18) Check the amount of log used after the transaction has been committed 
+DBCC SQLPERF (LOGSPACE);
+GO
+
+CHECKPOINT;
+GO
+
+-- 19) Look at the contents of the transaction log after the checkpoint process
+DBCC LOGINFO;
+GO
+DBCC SQLPERF (LOGSPACE);
+GO
+-- 20) To really dig into the internals of the transaction log
+--     we can use the undocumented function fn_dblog()
+--1) Create database to use
+USE master
+GO
+IF DATABASEPROPERTYEX (N'testDB2', N'Version') > 0
+BEGIN
+	ALTER DATABASE [testDB2] SET SINGLE_USER
+		WITH ROLLBACK IMMEDIATE;
+	DROP DATABASE [testDB2];
+END
+GO
+
+CREATE DATABASE [testDB2] ON PRIMARY (
+    NAME = N'testDB2_data',
+    FILENAME = N'C:\Demos\testDB2_data.mdf')
+LOG ON (
+    NAME = N'testDB2_log',
+    FILENAME = N'C:\Demos\testDB2_log.ldf',
+    SIZE = 5MB,
+    FILEGROWTH = 1MB);
+GO
+
+USE [testDB2];
+GO
+SET NOCOUNT ON;
+GO
+
+-- 2) Set the database is in SIMPLE recovery model & disable automatic statistics to minimize other log record entries for simplicity 
+ALTER DATABASE [testDB2] SET RECOVERY SIMPLE;
+GO
+ALTER DATABASE [testDB2] SET AUTO_CREATE_STATISTICS OFF;
+GO
+
+USE [testDB2]
+GO
+CHECKPOINT
+GO
+SELECT Description, * FROM fn_dblog (NULL, NULL); --undocumented table valued function but safe to use
+GO
+CHECKPOINT
+GO
+
+--Find who did what using the transaction log
+CREATE TABLE [testTable] (
+	[c1] INT IDENTITY,
+	[c2] CHAR (8000) DEFAULT 'This is a record');
+GO
+DROP TABLE [testTable]
+GO
+
+Select SUSER_SNAME([Transaction SID]) AS Culprit, FROM fn_dblog (NULL, NULL)
+WHERE [Transaction Name] LIKE '%drop%'
+
+SELECT * --undocumented table valued function, similar to fn_dblog() but used against a backup file instead of directly into the log file
+FROM fn_dump_dblog(DEFAULT, DEFAULT,DEFAULT, DEFAULT, 
+	'C:\Demos\testdb.bak', 
+	DEFAULT,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, 
+	DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, 
+	DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, 
+	DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, 
+	DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, 
+	DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, 
+	DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT) 
+	
+
+
+	ALTER DATABASE [testDB] SET SINGLE_USER
+		WITH ROLLBACK IMMEDIATE;
+	DROP DATABASE [testDB];
+
+	ALTER DATABASE [testDB2] SET SINGLE_USER
+		WITH ROLLBACK IMMEDIATE;
+	DROP DATABASE [testDB2];

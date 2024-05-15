@@ -1,0 +1,51 @@
+USE [master];
+GO
+
+-- 1) Create the database to use
+CREATE DATABASE [testDB];
+GO
+USE [testDB];
+GO
+SET NOCOUNT ON;
+GO
+
+-- 2) Create a table to generate large transactions
+CREATE TABLE [testTable] (
+	[c1] INT IDENTITY,
+	[c2] CHAR (8000) DEFAULT 'I am a Rockstar SQL Server DBA');
+GO
+
+-- 3) Change the database to FULL recovery model
+
+ALTER DATABASE [testDB] SET RECOVERY FULL;
+GO
+
+-- 4) Run large transactions 
+-- 5) Run PerfMon and monitor the transaction log behavior. The database is in pseudo-simple recovery model
+-- MSSQLSERVER: Databases : Log File Size (KB)
+-- MSSQLSERVER: Databases : Log File Used Size (KB)
+-- MSSQLSERVER: Databases : Percent log Used
+
+
+-- 6) Take a full database backup
+BACKUP DATABASE [testDB] TO
+	DISK = N'C:\Demos\testDB.bak'
+	WITH INIT, STATS;
+GO
+
+-- 7) Monitor PerfMon after the first full database backup
+
+
+-- 8) Check what is preventing log truncation
+SELECT [log_reuse_wait_desc]
+	FROM [master].[sys].[databases]
+	WHERE [name] = N'testDB';
+GO
+
+-- 9) Perform a log backup
+BACKUP LOG [testDB] TO
+	DISK = N'C:\Demos\testDB_log.trn'
+	WITH STATS;
+GO
+
+-- 10) Monitor PerfMon after the log backup

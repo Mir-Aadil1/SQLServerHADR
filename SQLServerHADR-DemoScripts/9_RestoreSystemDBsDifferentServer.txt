@@ -1,0 +1,58 @@
+--Preliminary tasks
+--1) Backup the master database
+BACKUP DATABASE master
+TO DISK = 'C:\Demos\master.bak'
+WITH INIT, STATS
+
+--2) Copy the backup to a different server
+--============================================
+
+--Restore the master database on a different server
+--0) Stop the SQL Server service
+--1) Start the SQL Server service in single-user, minimal configuration
+C:\Program Files\Microsoft SQL Server\MSSQL11.MSSQLSERVER\MSSQL\Binn\sqlservr.exe -m -f
+
+--2) Connect using SSMS but without opening Object Explorer
+-- Alternatively, you can use sqlcmd and run your SQL statements from there
+
+--3) Restore the master database
+RESTORE DATABASE master 
+FROM DISK = 'C:\Demos\master.bak' 
+WITH INIT, STATS
+
+--If the servers do not have the same disk layout
+RESTORE DATABASE master 
+FROM DISK = 'C:\Demos\master.bak' 
+WITH MOVE 'master' to 'C:\DATA\master.mdf',
+MOVE 'mastlog' to 'C:\DATA\mastlog.ldf',
+INIT, STATS
+
+--4) Restart the SQL Server service normally
+net start MSSQLSERVER
+
+--5) For older versions of SQL Server,
+--    You may have to rename the SQL Server instance 
+--   now that it's on a different server
+sp_dropserver SERVER1
+GO
+sp_addserver SERVER2, local
+GO
+
+
+--======================================
+--6) Restore the msdb database
+
+--7) Rename the instance name from the old server to the new server
+--NOTE:Not recommended since these are system objects
+--Recommended approach is to replicate the jobs to new server. Script the jobs out
+update msdb..sysjobs
+set originating_server='SERVER2'
+
+-- Script SQL Server Agent jobs using PowerShell
+[System.Reflection.Assembly]::LoadWithPartialName('Microsoft.SqlServer.SMO') | out-null
+$srv = New-Object ('Microsoft.SqlServer.Management.Smo.Server') "localhost"
+
+foreach($job in $srv.JobServer.Jobs) 
+{
+$job.script() |  out-File C:\Demos\$job.Name.sql
+}

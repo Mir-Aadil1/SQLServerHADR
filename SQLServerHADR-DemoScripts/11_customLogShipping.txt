@@ -1,0 +1,3 @@
+--1) Use existing log backups for log shipping
+--2) Configure ROBOCOPY job on standby
+--3) Configure PowerShell script on standby for restoring log backups 

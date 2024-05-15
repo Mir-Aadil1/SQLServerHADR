@@ -1,0 +1,63 @@
+-- Simulate disk failure
+
+-- Option 1 
+-- 1) Copy data and log files from a different source instance to a different drive
+-- From a mirror copy of the instance: WS-SERVER2
+-- This assumes that you have a mirror copy of your SQL Server system databases on a different server
+
+-- 2) Change startup parameters to point to the new drive
+-- 3) Start SQL Server instance in single user mode to modify other system database properties
+--C:\Program Files\Microsoft SQL Server\MSSQL11.MSSQLSERVER\MSSQL\Binn\sqlservr.exe -m -f
+
+-- 4) Restore the master database from backup
+RESTORE DATABASE master 
+FROM DISK = 'C:\Demos\master.bak' 
+WITH MOVE 'master' to 'C:\Demos\master.mdf',
+MOVE 'mastlog' to 'C:\Demos\mastlog.ldf',
+INIT, STATS
+GO
+-- Restore the msdb database
+RESTORE DATABASE msdb
+FROM DISK = 'C:\Demos\msdb.bak' 
+WITH MOVE 'master' to 'C:\Demos\msdbdata.mdf',
+MOVE 'mastlog' to 'C:\Demos\msdblog.ldf',
+INIT, STATS
+GO
+-- 5) Add your login to the sysadmin role just to be sure that you can connect to the instance later on
+USE [master]
+GO
+CREATE LOGIN [WS-SERVER1\Administrator] FROM WINDOWS WITH DEFAULT_DATABASE=[master]
+GO
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [WS-SERVER1\Administrator]
+GO
+
+-- 6) Modify other system databases properties
+ALTER DATABASE model
+MODIFY FILE ( NAME = modeldev , FILENAME = 'C:\Demos\model.mdf')
+GO
+ALTER DATABASE model
+MODIFY FILE ( NAME = modellog , FILENAME = 'C:\Demos\modellog.ldf')
+
+ALTER DATABASE msdb
+MODIFY FILE ( NAME = msdbdata, FILENAME = 'C:\Demos\msdbdata.mdf')
+GO
+ALTER DATABASE msdb
+MODIFY FILE ( NAME = msdblog , FILENAME = 'C:\Demos\msdblog.ldf')
+
+ALTER DATABASE tempdb
+MODIFY FILE ( NAME = tempdev , FILENAME = 'C:\Demos\tempdb.mdf')
+GO
+ALTER DATABASE tempdb
+MODIFY FILE ( NAME = templog , FILENAME = 'C:\Demos\templog.ldf')
+
+-- 5) Restart SQL Server normally
+
+--=======================================================
+-- Option 2 
+-- Restore using WITH MOVE
+-- if the servers do not have the same disk layout
+RESTORE DATABASE master 
+FROM DISK = 'C:\Demos\master.bak' 
+WITH MOVE 'master' to 'C:\Demos\master.mdf',
+MOVE 'mastlog' to 'C:\Demos\mastlog.ldf',
+INIT, STATS

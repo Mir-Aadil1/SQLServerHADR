@@ -1,0 +1,271 @@
+USE [master];
+GO
+-- 0) Drop database if it exists
+IF DATABASEPROPERTYEX ('testDB', 'Version') > 0
+	DROP DATABASE [testDB];
+GO
+
+-- 1) Create the database to use
+CREATE DATABASE [testDB] ON PRIMARY (
+    NAME = 'testDB_data',
+    FILENAME = N'C:\Demos\testDB_data.mdf')
+LOG ON (
+    NAME = 'testDB_log',
+    FILENAME = N'C:\Demos\testDB_log.ldf',
+    SIZE = 50MB,
+    FILEGROWTH = 10MB);
+GO
+
+USE [testDB];
+GO
+
+-- 2) Switch to FULL recovery model
+ALTER DATABASE [testDB]
+	SET RECOVERY FULL;
+GO
+
+-- 3) Create a table and corresponding clustered index
+CREATE TABLE testTable (
+	c1 INT IDENTITY,
+	c2 VARCHAR (100));
+GO
+CREATE CLUSTERED INDEX testTable_CL
+	ON testTable (c1);
+GO
+
+-- 4) Insert a row in the table
+INSERT INTO testTable
+	VALUES ('Row inserted: transaction # 1');
+GO
+
+-- 5) Take a full backup
+BACKUP DATABASE [testDB] TO
+	DISK = 'C:\Demos\testDB.bak'
+WITH INIT,STATS, STATS;
+GO
+
+-- 6) Add more rows in the table
+SET NOCOUNT ON;
+GO
+INSERT INTO testTable
+	VALUES ('Insert more rows...');
+GO 1000
+
+-- 7) Take a log backup
+BACKUP LOG testDB TO
+	DISK = 'C:\Demos\testDB_Log1.trn'
+WITH INIT,STATS, STATS;
+GO
+
+-- 8) Switch to BULK_LOGGED recovery model prior to performing an index rebuild
+ALTER DATABASE testDB
+	SET RECOVERY BULK_LOGGED;
+GO
+
+-- 9) Perform an index rebuild. Note that this is in the BULK_LOGGED recovery model
+ALTER INDEX testTable_CL ON testTable REBUILD;
+GO
+
+-- 10) Switch back to FULL recovery model after the index rebuild
+ALTER DATABASE testDB
+	SET RECOVERY FULL;
+GO
+
+-- 11) Add more rows in the table
+INSERT INTO testTable
+	VALUES ('Row inserted: transaction # 2');
+GO
+INSERT INTO testTable
+	VALUES ('Row inserted: transaction # 3');
+GO
+
+-- 12) Simulate a system crash
+SHUTDOWN WITH NOWAIT;
+GO
+
+-- 13) Corrupt the data file and restart the SQL Server service
+
+USE [testDB];
+GO
+
+-- 14) Try taking a tail-of-the-log backup!
+BACKUP LOG [testDB] TO
+	DISK = 'C:\Demos\testDB_tail.trn'
+WITH INIT,STATS, NO_TRUNCATE;
+GO
+
+-- 15) Try restoring from backups
+RESTORE DATABASE [testDB] FROM
+	DISK = 'C:\Demos\testDB.bak'
+WITH REPLACE, NORECOVERY;
+GO
+
+RESTORE LOG [testDB] FROM
+	DISK = 'C:\Demos\testDB_Log1.trn'
+WITH REPLACE, NORECOVERY;
+GO
+
+RESTORE LOG [testDB] FROM
+	DISK = 'C:\Demos\testDB_tail.trn'
+WITH REPLACE;
+GO
+
+-- 16) Try using the CONTINUE_AFTER_ERROR parameter
+RESTORE LOG testDB FROM
+	DISK = 'C:\Demos\testDB_tail.trn'
+WITH REPLACE, CONTINUE_AFTER_ERROR;
+GO
+
+-- 17) Check if all of the records are there
+SELECT * FROM testDB..testTable;
+GO
+
+-- 18) Try running DBCC CHECKDB
+DBCC CHECKDB (testDB) WITH NO_INFOMSGS;
+GO
+
+-- Tail-of-the-log backup is corrupt because it needs to backup all of the
+-- extents that changed as part of the minimally logged backup. if the database
+-- is in FULL recovery model, all of those changes are in the transaction log.
+
+-- 19) Re-restore without the tail-of-the-log
+RESTORE DATABASE testDB FROM
+	DISK = 'C:\Demos\testDB.bak'
+WITH REPLACE, NORECOVERY;
+GO
+
+RESTORE LOG testDB FROM
+	DISK = 'C:\Demos\testDB_Log1.trn'
+WITH REPLACE;
+GO
+
+-- 12) Check if all of the records are there
+SELECT * FROM testDB..testTable;
+GO
+
+
+----------------------------------------------------------------------------------------------------------------------------
+--The right approach is to backup the transaction log immediately
+--after switching back to the FULL recovery model
+USE [master];
+GO
+-- 0) Drop database if it exists
+IF DATABASEPROPERTYEX ('testDB', 'Version') > 0
+	DROP DATABASE [testDB];
+GO
+
+-- 1) Create the database to use
+CREATE DATABASE [testDB] ON PRIMARY (
+    NAME = 'testDB_data',
+    FILENAME = N'C:\Demos\testDB_data.mdf')
+LOG ON (
+    NAME = 'testDB_log',
+    FILENAME = N'C:\Demos\testDB_log.ldf',
+    SIZE = 50MB,
+    FILEGROWTH = 10MB);
+GO
+
+USE [testDB];
+GO
+
+-- 2) Switch to FULL recovery model
+ALTER DATABASE [testDB]
+	SET RECOVERY FULL;
+GO
+
+-- 3) Create a table and corresponding clustered index
+CREATE TABLE testTable (
+	c1 INT IDENTITY,
+	c2 VARCHAR (100));
+GO
+CREATE CLUSTERED INDEX testTable_CL
+	ON testTable (c1);
+GO
+
+-- 4) Insert a row in the table
+INSERT INTO testTable
+	VALUES ('Row inserted: transaction # 1');
+GO
+
+-- 5) Take a full backup
+BACKUP DATABASE [testDB] TO
+	DISK = 'C:\Demos\testDB.bak'
+WITH INIT,STATS, STATS;
+GO
+
+-- 6) Add more rows in the table
+SET NOCOUNT ON;
+GO
+INSERT INTO testTable
+	VALUES ('Insert more rows...');
+GO 1000
+
+-- 7) Take a log backup
+BACKUP LOG testDB TO
+	DISK = 'C:\Demos\testDB_Log1.trn'
+WITH INIT,STATS, STATS;
+GO
+
+-- 8) Switch to BULK_LOGGED recovery model prior to performing an index rebuild
+ALTER DATABASE testDB
+	SET RECOVERY BULK_LOGGED;
+GO
+
+-- 9) Perform an index rebuild. Note that this is in the BULK_LOGGED recovery model
+ALTER INDEX testTable_CL ON testTable REBUILD;
+GO
+
+-- 10) Switch back to FULL recovery model after the index rebuild
+ALTER DATABASE testDB
+	SET RECOVERY FULL;
+GO
+BACKUP LOG testDB TO
+	DISK = 'C:\Demos\testDB_Log1a.trn'
+WITH INIT,STATS, STATS;
+GO
+-- 11) Add more rows in the table
+INSERT INTO testTable
+	VALUES ('Row inserted: transaction # 2');
+GO
+INSERT INTO testTable
+	VALUES ('Row inserted: transaction # 3');
+GO
+
+-- 12) Simulate a system crash
+SHUTDOWN WITH NOWAIT;
+GO
+
+-- 13) Corrupt the data file and restart the SQL Server service
+
+USE [testDB];
+GO
+
+-- 14) Try taking a tail-of-the-log backup!
+BACKUP LOG [testDB] TO
+	DISK = 'C:\Demos\testDB_tail.trn'
+WITH INIT,STATS, NO_TRUNCATE;
+GO
+
+-- 15) Try restoring from backups
+RESTORE DATABASE [testDB] FROM
+	DISK = 'C:\Demos\testDB.bak'
+WITH REPLACE, NORECOVERY;
+GO
+
+RESTORE LOG [testDB] FROM
+	DISK = 'C:\Demos\testDB_Log1.trn'
+WITH REPLACE, NORECOVERY;
+GO
+RESTORE LOG [testDB] FROM
+	DISK = 'C:\Demos\testDB_Log1a.trn'
+WITH REPLACE, NORECOVERY;
+GO
+
+RESTORE LOG [testDB] FROM
+	DISK = 'C:\Demos\testDB_tail.trn'
+WITH REPLACE;
+GO
+
+-- 16) Check if all of the records are there
+SELECT * FROM testDB..testTable;
+GO

@@ -1,0 +1,21 @@
+ROBOCOPY \\SERVER1\LSBackup\databases C:\LSBackup\databases /COPY:DATSO /MIR /LOG+:C:\LSBackup\scripts\LOGs\ROBOCOPY.txt /TEE /ETA /TS /FP
+
+
+if errorlevel 16 echo ***FATAL ERROR*** & goto end
+if errorlevel 15 echo FAIL MISM XTRA COPY & goto end
+if errorlevel 14 echo FAIL MISM XTRA & goto end
+if errorlevel 13 echo FAIL MISM COPY & goto end
+if errorlevel 12 echo FAIL MISM & goto end
+if errorlevel 11 echo FAIL XTRA COPY & goto end
+if errorlevel 10 echo FAIL XTRA & goto end
+if errorlevel 9 echo FAIL COPY & goto end
+if errorlevel 8 echo FAIL & goto end
+if errorlevel 7 echo 1 & goto end
+if errorlevel 6 echo 1 & goto end
+if errorlevel 5 echo 1 & goto end
+if errorlevel 4 echo 1 & goto end
+if errorlevel 3 echo 1 COPY & goto end
+if errorlevel 2 echo 1 & goto end
+if errorlevel 1 echo 1 & goto end
+if errorlevel 0 echo --no change-- & goto end
+:end

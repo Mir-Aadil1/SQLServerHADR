@@ -1,0 +1,42 @@
+DROP DATABASE [Test4Backup]
+--9) Restore FULL database backup
+RESTORE DATABASE [Test4Backup] FROM
+	DISK = N'C:\Demos\0_Test4Backup.bak'
+	WITH NORECOVERY, STATS;
+GO
+
+RESTORE DATABASE [Test4Backup] FROM
+	DISK = N'C:\Demos\1_Test4Backup_DIFF.bak'
+	WITH NORECOVERY, STATS;
+GO
+--10) Restore filegroup backup from step #4, skipping the differential backup in step #3
+RESTORE DATABASE [Test4Backup] 
+   FILEGROUP = 'SECONDARY'
+   FROM DISK = N'C:\Demos\2_Test4Backup_FG2.bak'
+	WITH NORECOVERY, STATS;
+GO
+
+--11) Restore file backup of the primary filegroup from step #5
+RESTORE DATABASE [Test4Backup] 
+   FILE = 'Test4Backup_Primary_File1'
+   FROM DISK = N'C:\Demos\3_Test4Backup_FGPRI_F1.bak'
+	WITH NORECOVERY, STATS;
+GO
+
+--12) Restore file backup of the second file in the secondary filegroup from step #6
+RESTORE DATABASE [Test4Backup] 
+FILE = 'Test4Backup_Secondary_File2'
+   FROM DISK = N'C:\Demos\4_Test4Backup_FG2_F2.bak'
+	WITH NORECOVERY, STATS;
+GO
+
+--13) Restore differential backup from step #7
+RESTORE DATABASE [Test4Backup] 
+   FROM DISK = N'C:\Demos\5_Test4Backup_DIFF_2.bak'
+	WITH NORECOVERY, STATS;
+GO
+
+--14) Recover the database
+RESTORE DATABASE [Test4Backup] 
+WITH RECOVERY;
+GO

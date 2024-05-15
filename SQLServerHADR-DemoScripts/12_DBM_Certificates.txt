@@ -1,0 +1,182 @@
+CREATE DATABASE Northwind
+
+--NOTE: Northwind database will be used for this demo
+--1) Backup the principal database and restore it on the mirror server 
+--Run this on WS_SERVER1/principal server  
+:CONNECT WS-SERVER1
+USE master   
+GO   
+BACKUP DATABASE Northwind    
+   TO DISK = N'C:\Demos\NorthwindBackup.bak'   
+   WITH NAME = N'Full Database Backup',   
+    INIT, STATS = 10   
+GO   
+
+BACKUP LOG Northwind    
+   TO DISK = N'C:\Demos\NorthwindBackupLog.trn'   
+   WITH NAME = N'Transaction Log Backup',     
+       STATS = 10   
+GO  
+--==============================================
+--Copy the backups to the mirror server
+--Run this on WS_SERVER2/mirror server  
+:CONNECT WS-SERVER2
+RESTORE DATABASE Northwind   
+FROM DISK = N'C:\Demos\NorthwindBackup.bak'   
+WITH MOVE 'Northwind' TO 'C:\Demos\northwind.mdf',
+MOVE 'Northwind_log' TO 'C:\Demos\northwind.ldf',
+NORECOVERY 
+GO   
+
+RESTORE LOG Northwind   
+FROM DISK = N'C:\Demos\NorthwindBackupLog.trn'   
+WITH NORECOVERY 
+GO 
+
+--2) Validate your DNS entries
+
+--3) Create a database master key on the principal server
+--Run this on the principal server/WS_SERVER1  
+:CONNECT WS-SERVER1
+USE master  
+
+CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'y0ur$ecUr3PAssw0rd';  
+GO
+
+--4) Create the server-based certificate which will be used to encrypt the database mirroring endpoint
+--Run this on the principal server/WS_SERVER1  
+CREATE CERTIFICATE WS_SERVER1_cert WITH SUBJECT = 'WS_SERVER1 certificate for database mirroring' 
+GO 
+
+--===============================================
+--5) Create the database mirroring endpoint for the principal server using the certificate for authentication
+--Run this on the principal server/WS_SERVER1  
+CREATE ENDPOINT Endpoint_Mirroring STATE = STARTED 
+AS TCP(LISTENER_PORT = 9999, LISTENER_IP = ALL)  
+FOR DATABASE_MIRRORING (AUTHENTICATION = CERTIFICATE WS_SERVER1_cert,  
+ENCRYPTION = REQUIRED ALGORITHM AES, ROLE = ALL);  
+GO 
+
+
+--===============================================
+--6) Export the certificate to a file
+--Run this on the principal server/WS_SERVER1  
+BACKUP CERTIFICATE WS_SERVER1_cert TO FILE = 'C:\Demos\WS_SERVER1_cert.cer';  
+GO 
+
+--7) Copy the certificate file to the mirror and/or witness server
+
+--==============================================================
+--==============================================================
+--Repeat the same process for steps #3 to #7 on the mirror and/or witness servers
+--Run this on WS_SERVER2  
+:CONNECT WS-SERVER2
+USE master 
+--STEP #3:  
+USE master  
+
+CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'y0ur$ecUr3PAssw0rd';  
+GO 
+
+--STEP #4:  
+CREATE CERTIFICATE WS_SERVER2_cert WITH SUBJECT = 'WS_SERVER2 certificate for database mirroring' 
+GO  
+
+--STEP #5:  
+CREATE ENDPOINT Endpoint_Mirroring STATE = STARTED  
+AS TCP(LISTENER_PORT = 9999, LISTENER_IP = ALL)  
+FOR DATABASE_MIRRORING (AUTHENTICATION = CERTIFICATE WS_SERVER2_cert,  
+ENCRYPTION = REQUIRED ALGORITHM AES, ROLE = ALL);  
+GO  
+
+--STEP #6:  
+BACKUP CERTIFICATE WS_SERVER2_cert TO FILE = 'C:\Demos\WS_SERVER2_cert.cer';  
+GO 
+
+--STEP #7: Copy the certificate to the principal and/or witness servers 
+--================================================================
+--==============================================================
+
+--8) Create a login on the principal for the mirror
+--Run this on WS_SERVER1 
+:CONNECT WS-SERVER1
+USE master;  
+CREATE LOGIN login_mirroring WITH PASSWORD = 'y0ur$ecUr3PAssw0rd';  
+GO 
+
+--===================================================
+--9) Create a user for the login
+--Run this on WS_SERVER1 
+
+CREATE USER login_mirroring  
+FOR LOGIN login_mirroring  
+GO 
+
+--===================================================
+--10) Associate the certificate we created in Step #4 with the user
+--Run this on WS_SERVER1 
+
+CREATE CERTIFICATE WS_SERVER2_cert  
+AUTHORIZATION login_mirroring  
+FROM FILE = 'C:\Demos\WS_SERVER2_cert.cer'  
+GO 
+
+--===================================================
+--11) Grant the CONNECT permission on the login
+--Run this on WS_SERVER1 
+
+GRANT CONNECT ON ENDPOINT::Endpoint_Mirroring TO [login_mirroring];  
+GO 
+
+--===================================================
+--Repeat the same process from step #8 to step # 11 on the mirror and/or witness servers
+--STEP # 8) Create a login on the mirror for the principal
+--Run this on WS_SERVER2 
+:CONNECT WS-SERVER2
+USE master;  
+CREATE LOGIN login_mirroring WITH PASSWORD = 'y0ur$ecUr3PAssw0rd';  
+GO 
+
+--===================================================
+--STEP # 9) Create a user for the login
+--Run this on WS_SERVER2 
+
+CREATE USER login_mirroring  
+FOR LOGIN login_mirroring  
+GO 
+
+--===================================================
+--STEP # 10) Associate the certificate we created in Step #4 with the user
+--Run this on WS_SERVER2 
+
+CREATE CERTIFICATE WS_SERVER1_cert  
+AUTHORIZATION login_mirroring  
+FROM FILE = 'C:\Demos\WS_SERVER1_cert.cer'  
+GO 
+
+--===================================================
+--STEP # 11) Grant the CONNECT permission on the login
+--Run this on WS_SERVER2 
+
+GRANT CONNECT ON ENDPOINT::Endpoint_Mirroring TO [login_mirroring];  
+GO 
+--===================================================
+--===================================================
+--12) Prepare the mirror server for the database mirroring session
+--Run this on WS_SERVER2  
+:CONNECT WS-SERVER2
+USE master  
+GO  
+ALTER DATABASE Northwind SET PARTNER = 'TCP://WS-SERVER1.testdomain.com:9999';  
+GO 
+
+--===================================================
+--13) Prepare the principal server for the database mirroring session
+--Run this on WS_SERVER1  
+:CONNECT WS-SERVER1
+
+--Run this on WS_SERVER1  
+USE master  
+GO  
+ALTER DATABASE Northwind SET PARTNER = 'TCP://WS-SERVER2.testdomain.com:9999';  
+GO 
